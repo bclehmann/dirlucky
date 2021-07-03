@@ -109,7 +109,9 @@ void enumerate_directories_until_match(const char *query) {
 
 	free_queue(q);
 
-	puts(result);
+	if(result) {
+		puts(result);
+	}
 }
 
 
