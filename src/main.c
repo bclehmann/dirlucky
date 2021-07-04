@@ -5,7 +5,6 @@
 #include <unistd.h>
 #include <malloc.h>
 #include <stdbool.h>
-#include <pthread.h>
 
 #define THREADS 6
 
@@ -16,8 +15,95 @@ struct worker_function_args {
 };
 
 const char* result = NULL;
-pthread_mutex_t lock;
 
+#ifdef WIN32
+#include <windows.h>
+
+typedef HANDLE THREAD;
+typedef HANDLE MUTEX;
+
+int init_mutex(MUTEX* lock) {
+	MUTEX res = CreateMutexA(NULL, false, NULL);
+
+	if(res){
+		*lock = res;
+		return 0;
+	}
+
+	return -1;
+}
+
+int free_mutex(MUTEX* lock) {
+	return !CloseHandle(*lock);
+}
+
+int lock_mutex(MUTEX* lock) {
+	return WaitForSingleObject(*lock, INFINITE) == WAIT_FAILED;
+}
+
+int unlock_mutex(MUTEX* lock) {
+	return !ReleaseMutex(*lock);
+}
+
+int create_thread(THREAD* thread, void *(* func)(void *), void* arg) {
+	DWORD tid;
+	HANDLE res = CreateThread(NULL, 0, func, arg, 0, &tid);
+
+	if(res){
+		*thread = res;
+		return 0;
+	}
+
+	return -1;
+}
+
+int join_thread(THREAD thread) {
+	int res = WaitForSingleObject(thread, INFINITE);
+
+	return res == WAIT_FAILED;
+}
+
+int destroy_thread(THREAD thread) {
+	return !CloseHandle(thread);
+}
+
+#else
+#include <pthread.h>
+
+typedef pthread_t THREAD;
+typedef pthread_mutex_t MUTEX;
+
+
+int init_mutex(MUTEX* lock){
+	return pthread_mutex_init(lock, NULL);
+}
+
+int free_mutex(MUTEX* lock){
+	return pthread_mutex_destroy(lock);
+}
+
+int lock_mutex(MUTEX* lock){
+	return pthread_mutex_lock(lock);
+}
+
+int unlock_mutex(MUTEX* lock){
+	return pthread_mutex_unlock(lock);
+}
+
+int create_thread(THREAD* thread, void *(* func)(void *), void* arg){
+	return pthread_create(thread, NULL, func, arg);
+}
+
+int join_thread(THREAD thread){
+	return pthread_join(thread, NULL);
+}
+
+int destroy_thread(THREAD* thread) {
+	return 0;
+}
+#endif
+
+MUTEX lock;
 
 void* worker_function(void* vpargs){
 	struct worker_function_args* args = vpargs;
@@ -25,13 +111,13 @@ void* worker_function(void* vpargs){
 	struct dirent *dir;
 
 	while (true) {
-		pthread_mutex_lock(&lock);
+		lock_mutex(&lock);
 		if (is_queue_empty(args->q) || *(args->result_string)) {
-			pthread_mutex_unlock(&lock);
+			unlock_mutex(&lock);
 			break;
 		}
 		curr = dequeue(args->q);
-		pthread_mutex_unlock(&lock);
+		unlock_mutex(&lock);
 
 		if (curr.d) {
 			dir = readdir(curr.d);
@@ -46,9 +132,9 @@ void* worker_function(void* vpargs){
 						}
 						strcat(new_path, dir->d_name);
 
-						pthread_mutex_lock(&lock);
+						lock_mutex(&lock);
 						push_path_to_queue(args->q, new_path);
-						pthread_mutex_unlock(&lock);
+						unlock_mutex(&lock);
 					}
 
 					if (strcmp(dir->d_name, args->query) == 0) {
@@ -69,7 +155,7 @@ void* worker_function(void* vpargs){
 }
 
 void enumerate_directories_until_match(const char *query) {
-	if (pthread_mutex_init(&lock, NULL) != 0) {
+	if (init_mutex(&lock) != 0) {
 		return;
 	}
 
@@ -84,12 +170,12 @@ void enumerate_directories_until_match(const char *query) {
 		start_path = "/";
 	}
 
-	char* heap_allocated_start_path = malloc((strlen(start_path) +1) * sizeof(char));
+	char* heap_allocated_start_path = malloc((strlen(start_path) + 1) * sizeof(char));
 	strcpy(heap_allocated_start_path, start_path);
 
 	push_path_to_queue(q, heap_allocated_start_path);
 
-	pthread_t tid[THREADS];
+	THREAD tid[THREADS];
 
 	struct worker_function_args args = {
 			.q = q,
@@ -98,16 +184,19 @@ void enumerate_directories_until_match(const char *query) {
 	};
 
 	for(int i = 0; i < THREADS; i++){
-		if(pthread_create(&tid[i], NULL, &worker_function, &args)){
+		if(create_thread(&tid[i], &worker_function, &args)){
 			puts("Could not create thread.");
 		}
 	}
 
 	for(int i = 0; i < THREADS; i++){
-		pthread_join(tid[i], NULL);
+		join_thread(tid[i]);
+		destroy_thread(tid[i]);
 	}
 
 	free_queue(q);
+
+	free_mutex(&lock);
 
 	if(result) {
 		puts(result);
