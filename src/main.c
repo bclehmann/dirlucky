@@ -4,6 +4,9 @@
 #include <dirent.h>
 #include <malloc.h>
 #include <stdbool.h>
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
 
 #define THREADS 6
 
