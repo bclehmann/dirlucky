@@ -16,7 +16,7 @@ struct worker_function_args {
 
 const char* result = NULL;
 
-#ifdef WIN32g 
+#ifdef WIN32
 #include "windows/threading.h"
 #else
 #include "posix/threading.h"
