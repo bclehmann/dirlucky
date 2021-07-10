@@ -2,7 +2,6 @@
 
 #include <stdio.h>
 #include <dirent.h>
-#include <unistd.h>
 #include <malloc.h>
 #include <stdbool.h>
 
@@ -10,11 +9,13 @@
 
 struct worker_function_args {
 	struct directory_queue* q;
-	const char** result_string;
+	char*** result_array;
 	const char* query;
+	const long int max_results;
 };
 
-const char* result = NULL;
+int result_count = 0;
+char** result = NULL;
 
 #ifdef WIN32
 #include "windows/threading.h"
@@ -31,7 +32,7 @@ void* worker_function(void* vpargs){
 
 	while (true) {
 		lock_mutex(&lock);
-		if (is_queue_empty(args->q) || *(args->result_string)) {
+		if (is_queue_empty(args->q) || result_count >= args->max_results) {
 			unlock_mutex(&lock);
 			break;
 		}
@@ -57,8 +58,12 @@ void* worker_function(void* vpargs){
 					}
 
 					if (strcasecmp(dir->d_name, args->query) == 0) {
-						*(args->result_string) = new_path;
-						return NULL;
+						lock_mutex(&lock);
+						if(result_count >= args->max_results) {
+							return NULL;
+						}
+						(*(args->result_array))[result_count++] = new_path;
+						unlock_mutex(&lock);
 					}
 				}
 				dir = readdir(curr.d);
@@ -73,13 +78,18 @@ void* worker_function(void* vpargs){
 	return NULL;
 }
 
-void enumerate_directories_until_match(const char *query) {
+void enumerate_directories_until_match(const char *query, long int count) {
 	if (init_mutex(&lock) != 0) {
 		return;
 	}
 
 	struct directory_queue *q = create_queue();
 	if (!q) {
+		return;
+	}
+
+	result = malloc(count * sizeof(char*));
+	if(!result) {
 		return;
 	}
 
@@ -98,8 +108,9 @@ void enumerate_directories_until_match(const char *query) {
 
 	struct worker_function_args args = {
 			.q = q,
-			.result_string = &result,
-			.query = query
+			.result_array = &result,
+			.query = query,
+			.max_results = count
 	};
 
 	for(int i = 0; i < THREADS; i++){
@@ -114,12 +125,20 @@ void enumerate_directories_until_match(const char *query) {
 	}
 
 	free_queue(q);
+	q = NULL;
 
 	free_mutex(&lock);
 
-	if(result) {
-		puts(result);
+	if(result_count) {
+		for(long int i = 0; i < result_count; i++){
+			puts(result[i]);
+			free(result[i]);
+			result[i] = NULL;
+		}
 	}
+
+	free(result);
+	result = NULL;
 }
 
 
@@ -127,12 +146,22 @@ int main(int argc, char **argv) {
 	if (argc == 1) {
 		puts("Please pass in a query");
 		return -1;
-	} else if (argc >= 3) {
+	} else if (argc >= 4) {
 		puts("Too many arguments");
 		return -1;
 	}
 
-	enumerate_directories_until_match(argv[1]);
+	long int count = 1;
+	if(argc == 3) {
+		count = strtol(argv[2], NULL, 0);
+
+		if(count == 0 || errno == ERANGE) {
+			puts("Invalid count.");
+			return -1;
+		}
+	}
+
+	enumerate_directories_until_match(argv[1], count);
 
 	return 0;
 }
