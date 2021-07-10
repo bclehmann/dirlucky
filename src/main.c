@@ -16,7 +16,7 @@ struct worker_function_args {
 
 const char* result = NULL;
 
-#ifdef WIN32
+#ifdef WIN32g 
 #include "windows/threading.h"
 #else
 #include "posix/threading.h"
@@ -46,7 +46,7 @@ void* worker_function(void* vpargs){
 
 					if (new_path) {
 						strcpy(new_path, curr.path);
-						if (strcmp(curr.path, "/")) {
+						if (strcasecmp(curr.path, "/")) {
 							strcat(new_path, "/");
 						}
 						strcat(new_path, dir->d_name);
@@ -56,7 +56,7 @@ void* worker_function(void* vpargs){
 						unlock_mutex(&lock);
 					}
 
-					if (strcmp(dir->d_name, args->query) == 0) {
+					if (strcasecmp(dir->d_name, args->query) == 0) {
 						*(args->result_string) = new_path;
 						return NULL;
 					}
