@@ -32,7 +32,7 @@ int join_thread(THREAD thread){
 	return pthread_join(thread, NULL);
 }
 
-int destroy_thread(THREAD* thread) {
+int destroy_thread(THREAD thread) {
 	return 0;
 }
 
