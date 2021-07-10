@@ -46,11 +46,18 @@ void* worker_function(void* vpargs){
 			dir = readdir(curr.d);
 			while (dir) {
 				if (dir->d_name[0] != '.') {
+#ifndef WIN32
+					if(strcmp(curr.path, "/") == 0 && strcmp(dir->d_name, "proc") == 0){
+						dir = readdir(curr.d);
+						continue;
+					}
+#endif
+
 					char *new_path = malloc((strlen(curr.path) + strlen(dir->d_name) + 2 * sizeof(char)));
 
 					if (new_path) {
 						strcpy(new_path, curr.path);
-						if (strcasecmp(curr.path, "/")) {
+						if (strcmp(curr.path, "/")) {
 							strcat(new_path, "/");
 						}
 						strcat(new_path, dir->d_name);
