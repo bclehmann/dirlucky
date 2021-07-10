@@ -6,7 +6,7 @@ I highly suspect it will run on MacOS as it only relies on POSIX functions, but 
 # Usage
 
 ```sh
-dirlucky query
+dirlucky query [max_count]
 ```
 
 # Caveats
